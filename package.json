@@ -1,0 +1,51 @@
+{
+  "name": "weekly-planner",
+  "version": "0.1.0",
+  "description": "A futuristic local-first weekly planner with recurring tasks and reminder popups.",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "desktop": "electron .",
+    "dist:win": "electron-builder --win nsis",
+    "test": "node --test server/__tests__/*.test.js",
+    "build": "node server/__tests__/build-check.js"
+  },
+  "devDependencies": {
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "uk.tradewatch.weeklyplanner",
+    "productName": "Weekly Planner",
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Weekly-Planner-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

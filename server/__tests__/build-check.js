@@ -1,0 +1,34 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+
+test('static app files exist and include the planner mount point', () => {
+  assert.equal(existsSync('public/index.html'), true);
+  assert.equal(existsSync('public/app.js'), true);
+  assert.equal(existsSync('public/styles.css'), true);
+  assert.equal(existsSync('electron/main.cjs'), true);
+  assert.equal(existsSync('electron/preload.cjs'), true);
+  assert.equal(existsSync('.github/workflows/build-windows-exe.yml'), true);
+  assert.match(readFileSync('public/index.html', 'utf8'), /id="app"/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /Quick Add/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /workingHours/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /hourSlot/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /Week/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /weekScreen/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /open-day/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /dayOverview/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /Month/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /monthScreen/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /previous-month/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /next-month/);
+  assert.match(readFileSync('public/app.js', 'utf8'), /moveMonth/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /month-grid/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /month-controls/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /hour-slot/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /hour-tasks/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /week-selector/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /day-overview/);
+  assert.match(readFileSync('public/styles.css', 'utf8'), /--purple/);
+  assert.match(readFileSync('electron/main.cjs', 'utf8'), /startEmbeddedPlanner/);
+  assert.match(readFileSync('electron/main.cjs', 'utf8'), /startPlannerServer/);
+});

@@ -1,0 +1,13 @@
+services:
+  weekly-planner:
+    build: .
+    container_name: weekly-planner
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+    environment:
+      - NODE_ENV=production
+      - PORT=8787
+      - DB_PATH=/data/planner.db
+    restart: unless-stopped

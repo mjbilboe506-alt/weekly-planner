@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+data/
+docs/
+tmp/
+.env
+.superpowers/
+*.log
+.server.pid
+*.exe
