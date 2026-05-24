@@ -65,4 +65,64 @@ describe('planner store', () => {
     store.close();
     rmSync(dir, { recursive: true, force: true });
   });
+
+  test('stores planning metadata, templates, settings, and summaries', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'planner-db-'));
+    const store = createPlannerStore(join(dir, 'planner.db'));
+
+    const task = store.createTask({
+      title: 'Win the day',
+      scheduledDate: '2026-05-24',
+      scheduledTime: '08:00',
+      priority: 'critical',
+      category: 'Focus',
+      focus: true
+    });
+    const updated = store.updateTask(task.id, { status: 'doing', focus: false, priority: 'urgent' });
+    const template = store.createTemplate({
+      title: 'Check pipeline',
+      priority: 'urgent',
+      category: 'Sales',
+      scheduledTime: '09:30'
+    });
+    const settings = store.updateSettings({
+      accentColor: '#ffd36a',
+      soundTone: 'chime',
+      soundVolume: '0.4'
+    });
+    const summary = store.daySummary('2026-05-24');
+
+    assert.equal(updated.priority, 'urgent');
+    assert.equal(updated.category, 'Focus');
+    assert.equal(updated.focus, false);
+    assert.equal(template.title, 'Check pipeline');
+    assert.equal(store.listTemplates().some((item) => item.title === 'Check pipeline'), true);
+    assert.equal(settings.accentColor, '#ffd36a');
+    assert.equal(settings.soundTone, 'chime');
+    assert.equal(summary.total, 1);
+    assert.equal(summary.doing, 1);
+
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('can pause recurring rules', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'planner-db-'));
+    const store = createPlannerStore(join(dir, 'planner.db'));
+
+    const rule = store.createRecurringRule({
+      title: 'Check LMS',
+      frequency: 'daily',
+      daysOfWeek: [],
+      time: '09:00',
+      helper: ''
+    });
+    const paused = store.updateRecurringRule(rule.id, { active: false });
+
+    assert.equal(paused.active, false);
+    assert.equal(store.generateDueTasks('2026-05-24').length, 0);
+
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

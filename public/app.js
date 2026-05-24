@@ -4,11 +4,16 @@ const state = {
   tasks: { scheduled: [], unscheduled: [], all: [] },
   recurringRules: [],
   dueReminders: [],
+  templates: [],
+  settings: defaultSettings(),
+  summary: {},
   soundEnabled: false,
   quickTime: '09:00',
   loading: true
 };
 
+const categories = ['Work', 'Admin', 'Sales', 'Calls', 'Personal', 'Errands', 'Focus'];
+const priorities = ['low', 'normal', 'urgent', 'critical'];
 const app = document.querySelector('#app');
 
 init();
@@ -27,8 +32,12 @@ async function loadState() {
     tasks: data.tasks,
     recurringRules: data.recurringRules,
     dueReminders: data.dueReminders,
+    templates: data.templates || [],
+    settings: { ...defaultSettings(), ...(data.settings || {}) },
+    summary: data.summary || {},
     loading: false
   });
+  applyTheme();
   render();
 }
 
@@ -40,11 +49,12 @@ async function checkReminders() {
 }
 
 function render() {
+  applyTheme();
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">W</div>
+          <div class="brand-mark">MJB</div>
           <div>
             <strong>Weekly Planner by MJB</strong>
             <span>Local command centre</span>
@@ -58,6 +68,7 @@ function render() {
           ${navButton('recurring', 'Recurring')}
           ${navButton('settings', 'Settings')}
         </nav>
+        <a class="export-link" href="/api/export.ics">Export calendar</a>
         <button class="sound-toggle ${state.soundEnabled ? 'active' : ''}" data-action="enable-sound">
           ${state.soundEnabled ? 'Sound ready' : 'Enable sound'}
         </button>
@@ -106,6 +117,8 @@ function screen() {
 
 function todayScreen() {
   const tasks = tasksForDate(state.date);
+  const focusTasks = tasks.filter((task) => task.focus).slice(0, 3);
+  const overdue = overdueTasks();
   return `
     <section class="dashboard">
       ${dayOverview(state.date, tasks, 'Today Focus')}
@@ -120,63 +133,36 @@ function todayScreen() {
         ${quickAddForm()}
       </aside>
 
+      <section class="sub-panel focus-panel">
+        <div class="panel-head">
+          <div><p class="label">Top 3</p><h2>Daily Focus</h2></div>
+          <span>${focusTasks.length}/3 locked</span>
+        </div>
+        ${focusTasks.length ? focusTasks.map(compactTask).join('') : empty('Star up to three tasks to focus the day.')}
+      </section>
+
+      <section class="sub-panel overdue-panel">
+        <div class="panel-head">
+          <div><p class="label">Needs Attention</p><h2>Overdue</h2></div>
+          <span>${overdue.length}</span>
+        </div>
+        ${overdue.length ? overdue.slice(0, 5).map(compactTask).join('') : empty('No overdue tasks. Clean slate.')}
+      </section>
+
+      <section class="sub-panel review-panel">
+        <div class="panel-head">
+          <div><p class="label">Review</p><h2>End Of Day</h2></div>
+        </div>
+        ${summaryCards()}
+      </section>
+
       <section class="sub-panel">
         <div class="panel-head">
-          <div>
-            <p class="label">Later</p>
-            <h2>Unscheduled</h2>
-          </div>
+          <div><p class="label">Templates</p><h2>Quick Starts</h2></div>
         </div>
-        ${state.tasks.unscheduled.length ? state.tasks.unscheduled.map(compactTask).join('') : empty('Nothing parked for later.')}
-      </section>
-
-      <section class="sub-panel reminders-panel">
-        <div class="panel-head">
-          <div>
-            <p class="label">Reminders</p>
-            <h2>Upcoming</h2>
-          </div>
-        </div>
-        ${upcomingReminders().length ? upcomingReminders().map(compactTask).join('') : empty('No reminders waiting.')}
+        ${templatePicker()}
       </section>
     </section>
-  `;
-}
-
-function weekScreen() {
-  const days = weekDays(state.date);
-  const selectedTasks = tasksForDate(state.date);
-  return `
-    <section class="wide-panel week-panel">
-      <div class="panel-head">
-        <div><p class="label">Week</p><h2>${weekTitle(days)}</h2></div>
-        <span>Click a day to inspect 08:00-17:00</span>
-      </div>
-      <div class="week-selector">
-        ${days.map((date) => weekDayButton(date, tasksForDate(date))).join('')}
-      </div>
-      ${dayOverview(state.date, selectedTasks, 'Day Overview')}
-    </section>
-  `;
-}
-
-function dayOverview(date, tasks, title = 'Day Overview') {
-  const grouped = groupByHour(tasks);
-  const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  return `
-    <div class="agenda-panel day-overview">
-      <div class="panel-head">
-        <div>
-          <p class="label">08:00-17:00</p>
-          <h2>${title}</h2>
-          <span>${dateLabel}</span>
-        </div>
-        <span>${tasks.length} scheduled</span>
-      </div>
-      <div class="timeline">
-        ${workingHours().map((hour) => hourSlot(hour, grouped[hour] || [])).join('')}
-      </div>
-    </div>
   `;
 }
 
@@ -194,8 +180,23 @@ function quickAddForm() {
           <input name="scheduledTime" type="time" value="${state.quickTime}" />
         </label>
       </div>
+      <div class="form-grid">
+        <label>Priority
+          ${prioritySelect('priority', 'normal')}
+        </label>
+        <label>Category
+          ${categorySelect('category', 'Work')}
+        </label>
+      </div>
       <label>Helper
         <input name="helper" placeholder="Optional person or note" />
+      </label>
+      <label>Notes
+        <input name="notes" placeholder="Optional context" />
+      </label>
+      <label class="check-row">
+        <input name="focus" type="checkbox" />
+        Add to daily focus
       </label>
       <label class="check-row">
         <input name="hasReminder" type="checkbox" checked />
@@ -226,42 +227,81 @@ function quickAddForm() {
   `;
 }
 
-function taskRow(task) {
+function weekScreen() {
+  const days = weekDays(state.date);
+  const selectedTasks = tasksForDate(state.date);
   return `
-    <article class="task-row ${task.status}" data-task="${task.id}">
-      <div class="time">${task.scheduledTime || '--:--'}</div>
-      <div class="task-body">
-        <strong>${escapeHtml(task.title)}</strong>
-        <span>${task.helper ? `Needs help: ${escapeHtml(task.helper)}` : task.reminderAt ? `Reminder ${formatTime(task.reminderAt)}` : 'No reminder'}</span>
+    <section class="wide-panel week-panel">
+      <div class="panel-head">
+        <div><p class="label">Week</p><h2>${weekTitle(days)}</h2></div>
+        <span>Click a day. Drag tasks into the hours.</span>
       </div>
-      <div class="status">${statusLabel(task.status)}</div>
-      ${task.isVirtual ? '<span class="virtual-tag">Rule</span>' : `<button class="ghost" data-action="doing" data-id="${task.id}">Doing</button><button class="done" data-action="done" data-id="${task.id}">Done</button>`}
-    </article>
+      <div class="week-selector">
+        ${days.map((date) => weekDayButton(date, tasksForDate(date))).join('')}
+      </div>
+      ${dayOverview(state.date, selectedTasks, 'Day Overview')}
+    </section>
   `;
 }
 
-function hourSlot(hour, tasks) {
+function dayOverview(date, tasks, title = 'Day Overview') {
+  const grouped = groupByHour(tasks);
+  const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   return `
-    <div class="hour-slot ${isCurrentHour(hour) ? 'current-hour' : ''}" data-action="select-hour" data-hour="${hour}">
-      <button class="hour-label" data-action="select-hour" data-hour="${hour}" type="button">
-        <strong>${hour}</strong>
-        <span>${isCurrentHour(hour) ? 'Now' : 'Add'}</span>
-      </button>
-      <div class="hour-tasks">
-        ${tasks.length ? tasks.map(taskRow).join('') : '<div class="hour-empty">Empty slot</div>'}
+    <div class="agenda-panel day-overview">
+      <div class="panel-head">
+        <div>
+          <p class="label">${state.settings.workStart}-${state.settings.workEnd}</p>
+          <h2>${title}</h2>
+          <span>${dateLabel}</span>
+        </div>
+        <span>${tasks.length} scheduled</span>
+      </div>
+      <div class="timeline">
+        ${workingHours().map((hour) => hourSlot(hour, grouped[hour] || [])).join('')}
       </div>
     </div>
   `;
 }
 
+function hourSlot(hour, tasks) {
+  return `
+    <div class="hour-slot ${isCurrentHour(hour) ? 'current-hour' : ''}" data-drop-hour="${hour}">
+      <button class="hour-label" data-action="select-hour" data-hour="${hour}" type="button">
+        <strong>${hour}</strong>
+        <span>${isCurrentHour(hour) ? 'Now' : 'Add'}</span>
+      </button>
+      <div class="hour-tasks">
+        ${tasks.length ? tasks.map(taskRow).join('') : '<div class="hour-empty">Drop task here</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function taskRow(task) {
+  return `
+    <article class="task-row ${task.status} priority-${task.priority || 'normal'}" data-task="${task.id}" draggable="${!task.isVirtual}">
+      <div class="time">${task.scheduledTime || '--:--'}</div>
+      <div class="task-body">
+        <strong>${escapeHtml(task.title)}</strong>
+        <span>${task.category || 'Work'} · ${priorityLabel(task.priority)}${task.helper ? ` · Help: ${escapeHtml(task.helper)}` : ''}</span>
+      </div>
+      <div class="task-actions">
+        <button class="icon-action ${task.focus ? 'active' : ''}" data-action="toggle-focus" data-id="${task.id}" title="Daily focus">★</button>
+        ${task.isVirtual ? '<span class="virtual-tag">Rule</span>' : `<button class="ghost" data-action="doing" data-id="${task.id}">Doing</button><button class="done" data-action="done" data-id="${task.id}">Done</button>`}
+      </div>
+    </article>
+  `;
+}
+
 function compactTask(task) {
   return `
-    <article class="compact-task">
+    <article class="compact-task priority-${task.priority || 'normal'}" draggable="${!task.isVirtual}" data-task="${task.id}">
       <div>
         <strong>${escapeHtml(task.title)}</strong>
-        <span>${task.scheduledDate || 'No date'} ${task.scheduledTime || ''}</span>
+        <span>${task.scheduledDate || 'No date'} ${task.scheduledTime || ''} · ${task.category || 'Work'}</span>
       </div>
-      <button class="done" data-action="done" data-id="${task.id}">Done</button>
+      ${task.isVirtual ? '<span class="virtual-tag">Rule</span>' : `<button class="done" data-action="done" data-id="${task.id}">Done</button>`}
     </article>
   `;
 }
@@ -305,13 +345,20 @@ function monthScreen() {
 }
 
 function tasksScreen() {
+  const grouped = groupByCategory(state.tasks.all);
   return `
     <section class="wide-panel">
       <div class="panel-head">
         <div><p class="label">All Work</p><h2>Tasks</h2></div>
+        <span>${state.tasks.all.length} active</span>
       </div>
-      <div class="task-list">
-        ${state.tasks.all.length ? state.tasks.all.map(taskRow).join('') : empty('No tasks yet.')}
+      <div class="category-board">
+        ${Object.entries(grouped).map(([category, tasks]) => `
+          <section class="category-column">
+            <h3>${escapeHtml(category)}</h3>
+            ${tasks.length ? tasks.map(taskRow).join('') : empty('No tasks.')}
+          </section>
+        `).join('')}
       </div>
     </section>
   `;
@@ -322,12 +369,19 @@ function recurringScreen() {
     <section class="wide-panel">
       <div class="panel-head">
         <div><p class="label">Automation</p><h2>Recurring Rules</h2></div>
+        <span>Pause, resume, or retire routines.</span>
       </div>
       <div class="rules">
         ${state.recurringRules.length ? state.recurringRules.map((rule) => `
-          <article class="rule-card">
-            <strong>${escapeHtml(rule.title)}</strong>
-            <span>${rule.naturalText || `${rule.frequency} at ${rule.time}`}</span>
+          <article class="rule-card ${rule.active ? '' : 'paused'}">
+            <div>
+              <strong>${escapeHtml(rule.title)}</strong>
+              <span>${rule.naturalText || `${rule.frequency} at ${rule.time}`}</span>
+            </div>
+            <div class="rule-actions">
+              <button class="ghost" data-action="toggle-rule" data-id="${rule.id}" data-active="${rule.active ? '0' : '1'}">${rule.active ? 'Pause' : 'Resume'}</button>
+              <button class="ghost danger" data-action="delete-rule" data-id="${rule.id}">Delete</button>
+            </div>
           </article>
         `).join('') : empty('No recurring rules yet.')}
       </div>
@@ -339,10 +393,54 @@ function settingsScreen() {
   return `
     <section class="wide-panel settings">
       <div class="panel-head">
-        <div><p class="label">Local App</p><h2>Settings</h2></div>
+        <div><p class="label">Personalise</p><h2>Settings</h2></div>
       </div>
-      <p>Keep this browser tab open while Docker is running. Reminder popups and sound work while the app is open.</p>
-      <button class="primary" data-action="enable-sound">${state.soundEnabled ? 'Sound is enabled' : 'Enable reminder sound'}</button>
+      <form class="settings-grid" data-form="settings">
+        <label>Accent colour
+          <input name="accentColor" type="color" value="${state.settings.accentColor}" />
+        </label>
+        <label>Secondary colour
+          <input name="secondaryColor" type="color" value="${state.settings.secondaryColor}" />
+        </label>
+        <label>Reminder sound
+          <select name="soundTone">
+            ${['signal', 'chime', 'pulse', 'soft'].map((tone) => `<option value="${tone}" ${state.settings.soundTone === tone ? 'selected' : ''}>${tone}</option>`).join('')}
+          </select>
+        </label>
+        <label>Volume
+          <input name="soundVolume" type="range" min="0.05" max="0.7" step="0.01" value="${state.settings.soundVolume}" />
+        </label>
+        <label>Work starts
+          <input name="workStart" type="time" value="${state.settings.workStart}" />
+        </label>
+        <label>Work ends
+          <input name="workEnd" type="time" value="${state.settings.workEnd}" />
+        </label>
+        <button class="primary" type="submit">Save Settings</button>
+        <button class="ghost" type="button" data-action="test-sound">Test Sound</button>
+      </form>
+
+      <div class="template-admin">
+        <div class="panel-head">
+          <div><p class="label">Reusable Work</p><h2>Task Templates</h2></div>
+        </div>
+        <form class="quick-form" data-form="template">
+          <div class="form-grid">
+            <label>Template name
+              <input name="title" required placeholder="Review leads" />
+            </label>
+            <label>Default time
+              <input name="scheduledTime" type="time" value="09:00" />
+            </label>
+          </div>
+          <div class="form-grid">
+            <label>Priority ${prioritySelect('priority', 'normal')}</label>
+            <label>Category ${categorySelect('category', 'Work')}</label>
+          </div>
+          <button class="primary" type="submit">Save Template</button>
+        </form>
+        <div class="template-list">${state.templates.map(templateCard).join('')}</div>
+      </div>
     </section>
   `;
 }
@@ -352,7 +450,7 @@ function reminderModal() {
   if (!reminder) return '';
   return `
     <div class="modal-backdrop">
-      <section class="reminder-modal">
+      <section class="reminder-modal priority-${reminder.priority || 'normal'}">
         <p class="label">Reminder</p>
         <h2>${escapeHtml(reminder.title)}</h2>
         <p>${reminder.scheduledTime ? `Scheduled for ${reminder.scheduledTime}` : 'This task needs your attention.'}</p>
@@ -380,6 +478,7 @@ app.addEventListener('click', async (event) => {
   const action = button.dataset.action;
   if (action === 'refresh') await loadState();
   if (action === 'enable-sound') enableSound();
+  if (action === 'test-sound') playAlert(true);
   if (action === 'select-hour') selectHour(button.dataset.hour);
   if (action === 'open-day') await openDay(button.dataset.date);
   if (action === 'previous-month') await moveMonth(-1);
@@ -388,6 +487,11 @@ app.addEventListener('click', async (event) => {
   if (action === 'done') await updateStatus(button.dataset.id, 'done');
   if (action === 'doing') await updateStatus(button.dataset.id, 'doing');
   if (action === 'snooze') await snooze(button.dataset.id, button.dataset.minutes);
+  if (action === 'toggle-focus') await toggleFocus(button.dataset.id);
+  if (action === 'use-template') await useTemplate(button.dataset.id);
+  if (action === 'delete-template') await deleteTemplate(button.dataset.id);
+  if (action === 'toggle-rule') await toggleRule(button.dataset.id, button.dataset.active === '1');
+  if (action === 'delete-rule') await deleteRule(button.dataset.id);
 });
 
 app.addEventListener('change', async (event) => {
@@ -397,9 +501,38 @@ app.addEventListener('change', async (event) => {
   }
 });
 
+app.addEventListener('dragstart', (event) => {
+  const task = event.target.closest('[data-task]');
+  if (task) event.dataTransfer.setData('text/plain', task.dataset.task);
+});
+
+app.addEventListener('dragover', (event) => {
+  if (event.target.closest('[data-drop-hour]')) event.preventDefault();
+});
+
+app.addEventListener('drop', async (event) => {
+  const slot = event.target.closest('[data-drop-hour]');
+  if (!slot) return;
+  event.preventDefault();
+  const id = event.dataTransfer.getData('text/plain');
+  if (!id || id.startsWith('rule-')) return;
+  await api(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    body: { scheduledDate: state.date, scheduledTime: slot.dataset.dropHour }
+  });
+  await loadState();
+});
+
 app.addEventListener('submit', async (event) => {
-  const form = event.target.closest('form[data-form="quick-add"]');
-  if (!form) return;
+  const quickForm = event.target.closest('form[data-form="quick-add"]');
+  const settingsForm = event.target.closest('form[data-form="settings"]');
+  const templateForm = event.target.closest('form[data-form="template"]');
+  if (quickForm) await submitQuickAdd(event, quickForm);
+  if (settingsForm) await submitSettings(event, settingsForm);
+  if (templateForm) await submitTemplate(event, templateForm);
+});
+
+async function submitQuickAdd(event, form) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
   const isRecurring = form.elements.isRecurring.checked || data.naturalText.trim();
@@ -411,6 +544,7 @@ app.addEventListener('submit', async (event) => {
       method: 'POST',
       body: {
         title: data.title,
+        notes: data.notes,
         scheduledDate: data.scheduledDate,
         time: data.scheduledTime || '09:00',
         helper: data.helper,
@@ -424,17 +558,38 @@ app.addEventListener('submit', async (event) => {
       method: 'POST',
       body: {
         title: data.title,
+        notes: data.notes,
         scheduledDate: data.scheduledDate || null,
         scheduledTime: data.scheduledTime || null,
         reminderAt,
-        helper: data.helper
+        helper: data.helper,
+        priority: data.priority,
+        category: data.category,
+        focus: form.elements.focus.checked
       }
     });
   }
 
   form.reset();
   await loadState();
-});
+}
+
+async function submitSettings(event, form) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(form).entries());
+  const response = await api('/api/settings', { method: 'PATCH', body: data });
+  state.settings = response.settings;
+  applyTheme();
+  render();
+}
+
+async function submitTemplate(event, form) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(form).entries());
+  await api('/api/templates', { method: 'POST', body: data });
+  form.reset();
+  await loadState();
+}
 
 async function updateStatus(id, status) {
   await api(`/api/tasks/${id}/status`, { method: 'PATCH', body: { status } });
@@ -443,6 +598,48 @@ async function updateStatus(id, status) {
 
 async function snooze(id, minutes) {
   await api(`/api/tasks/${id}/snooze`, { method: 'POST', body: { minutes } });
+  await loadState();
+}
+
+async function toggleFocus(id) {
+  const task = state.tasks.all.find((item) => String(item.id) === String(id));
+  if (!task) return;
+  await api(`/api/tasks/${id}`, { method: 'PATCH', body: { focus: !task.focus } });
+  await loadState();
+}
+
+async function useTemplate(id) {
+  const template = state.templates.find((item) => String(item.id) === String(id));
+  if (!template) return;
+  const reminderAt = futureReminder(state.date, template.scheduledTime);
+  await api('/api/tasks', {
+    method: 'POST',
+    body: {
+      title: template.title,
+      notes: template.notes,
+      priority: template.priority,
+      category: template.category,
+      scheduledDate: state.date,
+      scheduledTime: template.scheduledTime,
+      helper: template.helper,
+      reminderAt
+    }
+  });
+  await loadState();
+}
+
+async function deleteTemplate(id) {
+  await api(`/api/templates/${id}`, { method: 'DELETE' });
+  await loadState();
+}
+
+async function toggleRule(id, active) {
+  await api(`/api/recurring/${id}`, { method: 'PATCH', body: { active } });
+  await loadState();
+}
+
+async function deleteRule(id) {
+  await api(`/api/recurring/${id}`, { method: 'DELETE' });
   await loadState();
 }
 
@@ -485,23 +682,71 @@ async function api(path, options = {}) {
 
 function enableSound() {
   state.soundEnabled = true;
-  playAlert();
+  playAlert(true);
   render();
 }
 
-function playAlert() {
-  if (!state.soundEnabled) return;
+function playAlert(force = false) {
+  if (!force && !state.soundEnabled) return;
   const ctx = new AudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(740, ctx.currentTime);
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.6);
+  const sequence = soundSequence(state.settings.soundTone);
+  const volume = Number(state.settings.soundVolume || 0.22);
+  sequence.forEach(([frequency, delay, duration]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = state.settings.soundTone === 'soft' ? 'sine' : 'triangle';
+    osc.frequency.setValueAtTime(frequency, ctx.currentTime + delay);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + delay + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + duration + 0.03);
+  });
+}
+
+function soundSequence(tone) {
+  if (tone === 'chime') return [[660, 0, 0.22], [880, 0.18, 0.3]];
+  if (tone === 'pulse') return [[520, 0, 0.18], [520, 0.22, 0.18], [760, 0.44, 0.22]];
+  if (tone === 'soft') return [[440, 0, 0.55]];
+  return [[740, 0, 0.6]];
+}
+
+function templatePicker() {
+  return state.templates.length
+    ? `<div class="template-list">${state.templates.map(templateCard).join('')}</div>`
+    : empty('No templates yet.');
+}
+
+function templateCard(template) {
+  return `
+    <article class="template-card priority-${template.priority}">
+      <div>
+        <strong>${escapeHtml(template.title)}</strong>
+        <span>${template.category} · ${template.scheduledTime || 'No time'}</span>
+      </div>
+      <div class="template-actions">
+        <button class="ghost" data-action="use-template" data-id="${template.id}">Use</button>
+        <button class="ghost danger" data-action="delete-template" data-id="${template.id}">Delete</button>
+      </div>
+    </article>
+  `;
+}
+
+function summaryCards() {
+  const summary = state.summary || {};
+  return `
+    <div class="summary-grid">
+      ${summaryCard('Done', summary.done || 0)}
+      ${summaryCard('Open', summary.todo || 0)}
+      ${summaryCard('Focus', summary.focus || 0)}
+      ${summaryCard('Critical', summary.critical || 0)}
+    </div>
+  `;
+}
+
+function summaryCard(label, value) {
+  return `<div class="summary-card"><strong>${value}</strong><span>${label}</span></div>`;
 }
 
 function upcomingReminders() {
@@ -511,8 +756,23 @@ function upcomingReminders() {
     .slice(0, 4);
 }
 
+function overdueTasks() {
+  const today = localDate();
+  return state.tasks.all.filter((task) => (
+    task.scheduledDate &&
+    task.scheduledDate < today &&
+    !['done', 'archived'].includes(task.status)
+  ));
+}
+
 function parseDays(value) {
   return value ? value.split(',').map((day) => Number(day.trim())).filter(Boolean) : [];
+}
+
+function tasksForDate(date) {
+  return monthItems([date])
+    .filter((task) => task.scheduledDate === date)
+    .sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
 }
 
 function groupByDate(tasks) {
@@ -524,12 +784,6 @@ function groupByDate(tasks) {
   }, {});
 }
 
-function tasksForDate(date) {
-  return monthItems([date])
-    .filter((task) => task.scheduledDate === date)
-    .sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
-}
-
 function groupByHour(tasks) {
   return tasks.reduce((groups, task) => {
     const hour = task.scheduledTime ? `${task.scheduledTime.slice(0, 2)}:00` : '--:--';
@@ -539,8 +793,19 @@ function groupByHour(tasks) {
   }, {});
 }
 
+function groupByCategory(tasks) {
+  return tasks.reduce((groups, task) => {
+    const category = task.category || 'Work';
+    groups[category] ||= [];
+    groups[category].push(task);
+    return groups;
+  }, Object.fromEntries(categories.map((category) => [category, []])));
+}
+
 function workingHours() {
-  return Array.from({ length: 10 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`);
+  const start = Number((state.settings.workStart || '08:00').slice(0, 2));
+  const end = Number((state.settings.workEnd || '17:00').slice(0, 2));
+  return Array.from({ length: Math.max(end - start + 1, 1) }, (_, index) => `${String(index + start).padStart(2, '0')}:00`);
 }
 
 function isCurrentHour(hour) {
@@ -575,14 +840,6 @@ function weekDayButton(date, tasks) {
   `;
 }
 
-function localDate(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function formatDay(date) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
-}
-
 function monthCalendarDays(monthDate) {
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -606,7 +863,7 @@ function monthItems(dateStrings) {
   const existing = state.tasks.all.filter((task) => task.scheduledDate);
   const virtualRecurring = [];
 
-  for (const rule of state.recurringRules) {
+  for (const rule of state.recurringRules.filter((item) => item.active)) {
     for (const date of dateStrings) {
       if (!recurringRuleOccurs(rule, date)) continue;
       const alreadyGenerated = existing.some((task) => task.recurringRuleId === rule.id && task.scheduledDate === date);
@@ -617,6 +874,8 @@ function monthItems(dateStrings) {
         scheduledDate: date,
         scheduledTime: rule.time,
         status: 'recurring',
+        priority: 'normal',
+        category: 'Recurring',
         isVirtual: true
       });
     }
@@ -636,10 +895,30 @@ function recurringRuleOccurs(rule, dateString) {
 
 function monthEvent(task) {
   return `
-    <span class="month-event ${task.isVirtual ? 'virtual' : ''}">
+    <span class="month-event ${task.isVirtual ? 'virtual' : ''} priority-${task.priority || 'normal'}">
       ${task.scheduledTime || ''} ${escapeHtml(task.title)}
     </span>
   `;
+}
+
+function prioritySelect(name, value) {
+  return `
+    <select name="${name}">
+      ${priorities.map((priority) => `<option value="${priority}" ${value === priority ? 'selected' : ''}>${priorityLabel(priority)}</option>`).join('')}
+    </select>
+  `;
+}
+
+function categorySelect(name, value) {
+  return `
+    <select name="${name}">
+      ${categories.map((category) => `<option value="${category}" ${value === category ? 'selected' : ''}>${category}</option>`).join('')}
+    </select>
+  `;
+}
+
+function priorityLabel(priority = 'normal') {
+  return priority.charAt(0).toUpperCase() + priority.slice(1);
 }
 
 function formatTime(dateTime) {
@@ -652,6 +931,32 @@ function statusLabel(status) {
 
 function empty(text) {
   return `<div class="empty">${text}</div>`;
+}
+
+function defaultSettings() {
+  return {
+    accentColor: '#d8b45f',
+    secondaryColor: '#8b5cf6',
+    soundTone: 'signal',
+    soundVolume: '0.22',
+    workStart: '08:00',
+    workEnd: '17:00'
+  };
+}
+
+function futureReminder(date, time) {
+  if (!date || !time) return null;
+  const value = `${date}T${time}:00`;
+  return new Date(value) > new Date() ? value : null;
+}
+
+function applyTheme() {
+  document.documentElement.style.setProperty('--gold', state.settings.accentColor || '#d8b45f');
+  document.documentElement.style.setProperty('--purple', state.settings.secondaryColor || '#8b5cf6');
+}
+
+function localDate(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function escapeHtml(value) {

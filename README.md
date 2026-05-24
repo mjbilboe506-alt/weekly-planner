@@ -9,9 +9,15 @@ Built to stay clean: no bloated project-management noise, no account system, no 
 - Today, week, and month planning views
 - Click any week or month day to open the 08:00-17:00 day overview
 - One-off tasks with time, helper, notes, and reminders
+- Priority levels, categories, and top-3 daily focus
+- Drag-and-drop scheduling into day hour slots
+- Overdue task panel and end-of-day review stats
+- Task templates for fast repeated work
 - Recurring tasks with custom frequency or natural language such as `every weekday at 9am`
+- Pause, resume, or retire recurring rules
 - Visual reminder popup with Done and Snooze controls
-- Audible reminder support once sound is enabled
+- Custom colours, work hours, reminder tones, and reminder volume
+- Calendar export through `.ics`
 - Local SQLite storage
 - Docker hosting for always-on local use
 - Optional Windows desktop installer via Electron

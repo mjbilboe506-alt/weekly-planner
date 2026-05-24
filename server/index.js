@@ -79,8 +79,17 @@ async function handleApi(req, res, url, store) {
       date,
       tasks: store.listTasks({ date }),
       recurringRules: store.listRecurringRules(),
-      dueReminders: store.dueReminders(new Date())
+      dueReminders: store.dueReminders(new Date()),
+      templates: store.listTemplates(),
+      settings: store.listSettings(),
+      summary: store.daySummary(date)
     });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/export.ics') {
+    const tasks = store.listTasks({ date: todayString() }).all;
+    sendText(res, 200, buildIcs(tasks), 'text/calendar; charset=utf-8');
     return;
   }
 
@@ -93,6 +102,14 @@ async function handleApi(req, res, url, store) {
     const body = await readJson(req);
     const task = store.createTask(body);
     sendJson(res, 201, { task });
+    return;
+  }
+
+  const taskMatch = url.pathname.match(/^\/api\/tasks\/(\d+)$/);
+  if (req.method === 'PATCH' && taskMatch) {
+    const body = await readJson(req);
+    const task = store.updateTask(Number(taskMatch[1]), body);
+    sendJson(res, 200, { task });
     return;
   }
 
@@ -111,6 +128,41 @@ async function handleApi(req, res, url, store) {
     });
     const generated = store.generateDueTasks(todayString());
     sendJson(res, 201, { rule, generated });
+    return;
+  }
+
+  const recurringMatch = url.pathname.match(/^\/api\/recurring\/(\d+)$/);
+  if (req.method === 'PATCH' && recurringMatch) {
+    const body = await readJson(req);
+    const rule = store.updateRecurringRule(Number(recurringMatch[1]), body);
+    sendJson(res, 200, { rule });
+    return;
+  }
+
+  if (req.method === 'DELETE' && recurringMatch) {
+    const rule = store.deleteRecurringRule(Number(recurringMatch[1]));
+    sendJson(res, 200, { rule });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/templates') {
+    const body = await readJson(req);
+    const template = store.createTemplate(body);
+    sendJson(res, 201, { template });
+    return;
+  }
+
+  const templateMatch = url.pathname.match(/^\/api\/templates\/(\d+)$/);
+  if (req.method === 'DELETE' && templateMatch) {
+    const template = store.deleteTemplate(Number(templateMatch[1]));
+    sendJson(res, 200, { template });
+    return;
+  }
+
+  if (req.method === 'PATCH' && url.pathname === '/api/settings') {
+    const body = await readJson(req);
+    const settings = store.updateSettings(body);
+    sendJson(res, 200, { settings });
     return;
   }
 
@@ -155,6 +207,11 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendText(res, status, payload, contentType) {
+  res.writeHead(status, { 'Content-Type': contentType });
+  res.end(payload);
+}
+
 function readJson(req) {
   return new Promise((resolveBody, reject) => {
     let raw = '';
@@ -191,4 +248,43 @@ function shutdown(planner) {
 
 function isDirectRun() {
   return process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+function buildIcs(tasks) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Weekly Planner by MJB//EN'
+  ];
+
+  for (const task of tasks.filter((item) => item.scheduledDate)) {
+    const start = compactIcsDate(task.scheduledDate, task.scheduledTime || '09:00');
+    const end = compactIcsDate(task.scheduledDate, addHour(task.scheduledTime || '09:00'));
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:weekly-planner-${task.id}@mjb`,
+      `DTSTAMP:${compactIcsDate(todayString(), '00:00')}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${escapeIcs(task.title)}`,
+      `DESCRIPTION:${escapeIcs([task.notes, task.helper ? `Helper: ${task.helper}` : '', `Priority: ${task.priority}`].filter(Boolean).join('\\n'))}`,
+      'END:VEVENT'
+    );
+  }
+
+  lines.push('END:VCALENDAR');
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+function compactIcsDate(date, time) {
+  return `${date.replaceAll('-', '')}T${time.replace(':', '')}00`;
+}
+
+function addHour(time) {
+  const [hour, minute] = time.split(':').map(Number);
+  return `${String(Math.min(hour + 1, 23)).padStart(2, '0')}:${String(minute || 0).padStart(2, '0')}`;
+}
+
+function escapeIcs(value) {
+  return String(value || '').replaceAll('\\', '\\\\').replaceAll(';', '\\;').replaceAll(',', '\\,').replaceAll('\n', '\\n');
 }
