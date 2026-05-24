@@ -1,7 +1,7 @@
 {
   "name": "weekly-planner",
   "version": "0.1.0",
-  "description": "A futuristic local-first weekly planner with recurring tasks and reminder popups.",
+  "description": "A futuristic local-first weekly planner by MJB with recurring tasks and reminder popups.",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "uk.tradewatch.weeklyplanner",
-    "productName": "Weekly Planner",
+    "productName": "Weekly Planner by MJB",
     "asar": true,
     "files": [
       "electron/**/*",
@@ -38,7 +38,7 @@
           ]
         }
       ],
-      "artifactName": "Weekly-Planner-Setup-${version}.${ext}"
+      "artifactName": "Weekly-Planner-by-MJB-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

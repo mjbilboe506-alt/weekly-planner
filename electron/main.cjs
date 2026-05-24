@@ -14,7 +14,7 @@ async function createWindow() {
     height: 940,
     minWidth: 1120,
     minHeight: 760,
-    title: 'Weekly Planner',
+    title: 'Weekly Planner by MJB',
     backgroundColor: '#080710',
     autoHideMenuBar: true,
     webPreferences: {

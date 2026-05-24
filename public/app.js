@@ -46,7 +46,7 @@ function render() {
         <div class="brand">
           <div class="brand-mark">W</div>
           <div>
-            <strong>Weekly Planner</strong>
+            <strong>Weekly Planner by MJB</strong>
             <span>Local command centre</span>
           </div>
         </div>
